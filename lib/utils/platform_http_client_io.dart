@@ -68,7 +68,7 @@ http.Client createPlatformClient({Duration connectTimeout = MediaServerTimeouts.
     try {
       final client = WinHttpClient.fromConfiguration(
         // A zero receive timeout is WinHTTP's "wait indefinitely".
-        WinHttpClientConfiguration(connectTimeout: connectTimeout, receiveTimeout: Duration.zero),
+        WinHttpClientConfiguration(userAgent: 'Plezy', connectTimeout: connectTimeout, receiveTimeout: Duration.zero),
       );
       _logPlatformClient('windows', 'WinHttpClient');
       return ManagedHttpClient(client, debugLabel: 'WinHttpClient');
