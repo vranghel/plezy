@@ -1,0 +1,75 @@
+name: Plezy Windows x64 portable (custom User-Agent)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Check out Plezy source
+        uses: actions/checkout@v4
+
+      - name: Verify User-Agent patch is present
+        shell: pwsh
+        run: |
+          $source = Get-Content 'lib/utils/platform_http_client_io.dart' -Raw
+          if (-not $source.Contains("userAgent: 'Plezy'")) {
+            throw 'Custom User-Agent change is missing. Apply the patch before building.'
+          }
+
+      - name: Install Flutter 3.47.1
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      - name: Restore Dart dependencies
+        shell: pwsh
+        run: flutter pub get --enforce-lockfile --no-example
+
+      - name: Install Plezy patched Windows Flutter engine
+        shell: pwsh
+        run: |
+          flutter precache --windows
+          .\windows\tool\install-patched-engine.ps1
+
+      - name: Compile Windows release bundle
+        shell: pwsh
+        run: flutter build windows --release --dart-define=ENABLE_UPDATE_CHECK=false
+
+      - name: Validate and package portable distribution
+        shell: pwsh
+        run: |
+          $bundle = 'build/windows/x64/runner/Release'
+          $required = @(
+            'plezy.exe', 'flutter_windows.dll', 'sqlite3.dll',
+            'libmpv-2.dll', 'data/app.so', 'data/icudtl.dat',
+            'data/flutter_assets/NativeAssetsManifest.json',
+            'msvcp140.dll', 'vcruntime140.dll'
+          )
+          foreach ($entry in $required) {
+            if (-not (Test-Path (Join-Path $bundle $entry) -PathType Leaf)) {
+              throw "Missing required file in portable bundle: $entry"
+            }
+          }
+          $sevenZip = (Get-Command 7z -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source)
+          if (-not $sevenZip) { $sevenZip = 'C:\Program Files\7-Zip\7z.exe' }
+          if (-not (Test-Path $sevenZip)) { throw '7-Zip not available on runner' }
+          $out = Join-Path $env:GITHUB_WORKSPACE 'plezy-windows-x64-portable-useragent.7z'
+          Push-Location $bundle
+          try {
+            & $sevenZip a -mx=9 $out *
+            if ($LASTEXITCODE -ne 0) { throw "7-Zip failed with exit code $LASTEXITCODE" }
+          } finally { Pop-Location }
+
+      - name: Upload portable archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: plezy-windows-x64-portable-useragent
+          path: plezy-windows-x64-portable-useragent.7z
+          if-no-files-found: error
